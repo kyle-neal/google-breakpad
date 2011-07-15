@@ -40,11 +40,14 @@ The server registers asynchronous waits on these events with the {{{ClientInfo}}
 In the end handles are "duped" into the client process, and the clients use {{{SetEvent}}} to request events, wait on the other event, or the {{{server_died}}} mutex.
 
 == Linux ==
-As of April 2009, Linux had a minidump generator that is not entirely out-of-process.  The minidump was generated from a separate process, but one that shared an address space, file descriptors, signal handles and much else with the crashing process.  It worked by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.
+=== History ===
+As of April 2009, Linux had a minidump generator that is not entirely out-of-process.  The minidump was generated from a separate process, but one that shared an address space, file descriptors, signal handles and much else with the crashing process.  It worked by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.  Since then Crash has updated linux exception handling to provide more benefits of out-of-process report generation.
 
-Since then Crash has updated linux exception handling to provide more benefits of out-of-process report generation.
+=== Overview ===
+Crash uses a per-user daemon to write out a minidump that does not have, interact with or depend on the crashing process.  We don't want to start a new separate process every time a user launches a Breakpad-enabled process.  Doing one daemon per machine is unacceptable for security concerns around one user being able to initiate a minidump generation for another user's process.
 
-TODO: Fill in
+=== Client/Server Communication ===
+On Breakpad initialization in a process, the initializer will check if the daemon is running and, if not, start it.  The race condition between the check and the initialization is not a problem because multiple daemons can check if the IPC endpoint already exists and if a server is listening.  Even if multiple copies of the daemon try to {{{bind()}}} the filesystem to name the socket, all but one will fail and can terminate.
 
 == Mac OSX ==
 Out-of-process exception handling is fully supported on Mac.
