@@ -9,7 +9,7 @@ TODO: More on first and second change and vectored v. __try/__catch.
 There are two main types of exceptions across all platforms: in-process and out-of-process.
 
 = In-Process =
-It is generally considered unsafe to write a minidump from a crashed process.  For example, key data structures could be corrupted or the stack on which the exception handler runs could have been overwritten.  For this reason all platforms also support  out-of-process exception handling.
+In process exception handling is relatively simple since the crashing process handles crash reporting.  It is generally considered unsafe to write a minidump from a crashed process.  For example, key data structures could be corrupted or the stack on which the exception handler runs could have been overwritten.  For this reason all platforms also support  out-of-process exception handling.
 
 == Windows ==
 In-process exception handling Crash creates a 'handler head' that waits infinitely on a semaphore at start up.  When this thread is woken it writes the minidump and signals to the excepting thread that it may continue.  A filter will tell the OS to kill the process if the minidump is written successfully.  Otherwise it continues.
