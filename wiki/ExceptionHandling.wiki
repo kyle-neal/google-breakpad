@@ -38,8 +38,11 @@ The server registers asynchronous waits on these events with the {{{ClientInfo}}
 In the end handles are "duped" into the client process, and the clients use {{{SetEvent}}} to request events, wait on the other event, or the {{{server_died}}} mutex.
 
 == Linux ==
-As of April 2009, Linux has a minidump generator that is not entirely out-of-process.  The minidump is generated from a separate process, but one that shares an address space, file descriptors, signal handles and much else with the crashing process.  It works by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.
+As of April 2009, Linux had a minidump generator that is not entirely out-of-process.  The minidump was generated from a separate process, but one that shared an address space, file descriptors, signal handles and much else with the crashing process.  It worked by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.
 
+Since then Crash has updated linux exception handling to provide more benefits of out-of-process report generation.
 
-== Mac ==
+TODO: Fill in
+
+== Mac OSX ==
 Out-of-process exception handling is fully supported on Mac.
