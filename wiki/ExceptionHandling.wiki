@@ -1,0 +1,15 @@
+#summary Overview of exception handling in Breakpad.
+
+= Basics =
+Exception handling is a machanism designed to handle the occurance of exceptions, special conditions that change the normal flow of program exectution.
+
+{{{SetUnhandledExceptionFilter}}} replaces all unhandled exceptions when Crash is enabled.
+TODO: More on first and second change and vectored v. __try/__catch.
+
+There are two main types of exceptions across all platforms: in-process and out-of-process.
+
+= In-Process =
+
+It is generally considered unsafe to write a minidump from a crashed process.  For example, key data structures could be corrupted or the stack on which the exception handler runs could have been overwritten.  For this reason all platforms also support  out-of-process exception handling.
+
+= Out-of-Process =
