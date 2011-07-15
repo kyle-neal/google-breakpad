@@ -26,3 +26,13 @@ When registering callbacks, the client passes in two pointers to pointers:
   # A pointer to the {{{EXCEPTION_INFO}}} pointer
   # A pointer to the  {{{MDRawAssertionInfo}}} which handles various non-exception failures like assertions
 
+The essence of registration is adding a "{{{ClientInfo}}}" object that contains handles used for synchronization with the crashing process to an array maintained by the server.   This is how we can keep track of all the clients on the system that have registered for minidumps.  These handles are:
+  * {{{server_died(mutex)}}}
+  * {{{dump_requested(Event)}}}
+  * {{{dump_generated(Event)}}}
+
+The server registers asynchronous waits on these events with the {{{ClientInfo}}} object as the callback context.  When the {{{dump_requested}}} event is set by the client, the {{{OnDumpRequested()}}} callback is called.  The server uses the handles inside {{{ClientInfo}}} to communicate with the child process.  Once the child sets the event, it waits for two objects:
+  * the {{{dump_generated}}} event
+  * the {{{server_died}}} mutex
+
+In the end handles are "duped" into the client process, and the clients use {{{SetEvent}}} to request events, wait on the other event, or the {{{server_died}}} mutex.
