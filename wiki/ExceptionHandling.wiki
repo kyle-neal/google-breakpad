@@ -1,6 +1,8 @@
 #summary Overview of exception handling in Breakpad.
+= Exception Handling=
+<wiki:toc max_depth="2" />
 
-= Basics =
+== Basics ==
 Exception handling is a machanism designed to handle the occurance of exceptions, special conditions that change the normal flow of program exectution.
 
 {{{SetUnhandledExceptionFilter}}} replaces all unhandled exceptions when Crash is enabled.
@@ -8,16 +10,16 @@ TODO: More on first and second change and vectored v. __try/__catch.
 
 There are two main types of exceptions across all platforms: in-process and out-of-process.
 
-= In-Process =
+== In-Process ==
 In process exception handling is relatively simple since the crashing process handles crash reporting.  It is generally considered unsafe to write a minidump from a crashed process.  For example, key data structures could be corrupted or the stack on which the exception handler runs could have been overwritten.  For this reason all platforms also support some level out-of-process exception handling.
 
-== Windows ==
+=== Windows ===
 In-process exception handling Crash creates a 'handler head' that waits infinitely on a semaphore at start up.  When this thread is woken it writes the minidump and signals to the excepting thread that it may continue.  A filter will tell the OS to kill the process if the minidump is written successfully.  Otherwise it continues.
 
-= Out-of-Process =
+== Out-of-Process ==
 Out-of-process exception handling is more complicated than in-process exception handling.
 
-== Windows ==
+=== Windows ===
 Crash uses two abstractions around the exception handler to make things work: {{{CrashGenerationServer}}} and {{{CrashGenerationClient}}}.  The constructor for these takes a named pipe name.
 
 During server startup a named pipe and registers callbacks for client connections are created.  The named pipe is used for registration and all IO on the pipe is done asynchronously.  {{{OnPipeConnected}}} is called when a client attempts to connect (call {{{CreateFile}}} on the pipe).  {{{OnPipeConnected}}} does the state machine transistion from {{{Initial}}} to {{{Connecting}}} and on through {{{Reading}}}, {{{Reading_Done}}}, {{{Writing}}}, {{{Writing_Done}}}, {{{Reading_ACK}}}, and {{{Disconnecting}}}.
@@ -37,12 +39,12 @@ The server registers asynchronous waits on these events with the {{{ClientInfo}}
 
 In the end handles are "duped" into the client process, and the clients use {{{SetEvent}}} to request events, wait on the other event, or the {{{server_died}}} mutex.
 
-== Linux ==
+=== Linux ===
 As of April 2009, Linux had a minidump generator that is not entirely out-of-process.  The minidump was generated from a separate process, but one that shared an address space, file descriptors, signal handles and much else with the crashing process.  It worked by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.
 
 Since then Crash has updated linux exception handling to provide more benefits of out-of-process report generation.
 
 TODO: Fill in
 
-== Mac OSX ==
+=== Mac OSX ===
 Out-of-process exception handling is fully supported on Mac.
