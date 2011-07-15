@@ -32,8 +32,8 @@ The essence of registration is adding a "{{{ClientInfo}}}" object that contains 
   * {{{dump_generated(Event)}}}
 
 The server registers asynchronous waits on these events with the {{{ClientInfo}}} object as the callback context.  When the {{{dump_requested}}} event is set by the client, the {{{OnDumpRequested()}}} callback is called.  The server uses the handles inside {{{ClientInfo}}} to communicate with the child process.  Once the child sets the event, it waits for two objects:
-  * the {{{dump_generated}}} event
-  * the {{{server_died}}} mutex
+  # the {{{dump_generated}}} event
+  # the {{{server_died}}} mutex
 
 In the end handles are "duped" into the client process, and the clients use {{{SetEvent}}} to request events, wait on the other event, or the {{{server_died}}} mutex.
 
