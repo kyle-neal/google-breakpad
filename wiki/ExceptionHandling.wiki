@@ -53,5 +53,16 @@ This point is relevant for error handling conditions.  Linux does not clean the 
 
 Breakpad uses UNIX domain sockets since they support full duplex communication (unlike Windows, named pipes on Linux are half) and the kernal automtically creats a private channel between the client and server once the client calls {{{connect()}}}.
 
+=== Minidump Generation ===
+We use the historical system with {{{ptrace()}}} and {{{/proc}}} within the daemon executable.
+
+Overall the operations look like:
+  # Signal from OS indicating crash
+  # Signal Handler suspends all threads except itself
+  # Signal Handler sends {{{CRASH_DUMP_REQUEST}}} message to server and waits for response
+  # Server inspects
+  # Minidump is asynchronously written to disk by the server
+  # Server responds indicating inspection is done
+
 == Mac OSX ==
 Out-of-process exception handling is fully supported on Mac.
