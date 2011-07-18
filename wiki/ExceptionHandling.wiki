@@ -2,8 +2,10 @@
 
 <wiki:toc max_depth="2" />
 
+The goal of this document is to give an overview of the exception handling options in breakpad.
+
 = Basics =
-Exception handling is a machanism designed to handle the occurance of exceptions, special conditions that change the normal flow of program exectution.
+Exception handling is a mechanism designed to handle the occurrence of exceptions, special conditions that change the normal flow of program execution.
 
 {{{SetUnhandledExceptionFilter}}} replaces all unhandled exceptions when Crash is enabled.
 TODO: More on first and second change and vectored v. __try/__catch.
@@ -22,7 +24,7 @@ Out-of-process exception handling is more complicated than in-process exception 
 == Windows ==
 Crash uses two abstractions around the exception handler to make things work: {{{CrashGenerationServer}}} and {{{CrashGenerationClient}}}.  The constructor for these takes a named pipe name.
 
-During server startup a named pipe and registers callbacks for client connections are created.  The named pipe is used for registration and all IO on the pipe is done asynchronously.  {{{OnPipeConnected}}} is called when a client attempts to connect (call {{{CreateFile}}} on the pipe).  {{{OnPipeConnected}}} does the state machine transistion from {{{Initial}}} to {{{Connecting}}} and on through {{{Reading}}}, {{{Reading_Done}}}, {{{Writing}}}, {{{Writing_Done}}}, {{{Reading_ACK}}}, and {{{Disconnecting}}}.
+During server start up a named pipe and registers callbacks for client connections are created.  The named pipe is used for registration and all IO on the pipe is done asynchronously.  {{{OnPipeConnected}}} is called when a client attempts to connect (call {{{CreateFile}}} on the pipe).  {{{OnPipeConnected}}} does the state machine transition from {{{Initial}}} to {{{Connecting}}} and on through {{{Reading}}}, {{{Reading_Done}}}, {{{Writing}}}, {{{Writing_Done}}}, {{{Reading_ACK}}}, and {{{Disconnecting}}}.
 
 When registering callbacks, the client passes in two pointers to pointers:
   # A pointer to the {{{EXCEPTION_INFO}}} pointer
@@ -41,7 +43,7 @@ In the end handles are "duped" into the client process, and the clients use {{{S
 
 == Linux ==
 === History ===
-As of April 2009, Linux had a minidump generator that is not entirely out-of-process.  The minidump was generated from a separate process, but one that shared an address space, file descriptors, signal handles and much else with the crashing process.  It worked by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.  Since then Crash has updated linux exception handling to provide more benefits of out-of-process report generation.
+As of April 2009, Linux had a minidump generator that is not entirely out-of-process.  The minidump was generated from a separate process, but one that shared an address space, file descriptors, signal handles and much else with the crashing process.  It worked by using the {{{clone()}}} system call to duplicate the crashing process, and then uses {{{ptrace()}}} and the {{{/proc}}} file system to retrieve the information required to write the minidump.  Since then Crash has updated Linux exception handling to provide more benefits of out-of-process report generation.
 
 === Overview ===
 Crash uses a per-user daemon to write out a minidump that does not have, interact with or depend on the crashing process.  We don't want to start a new separate process every time a user launches a Breakpad-enabled process.  Doing one daemon per machine is unacceptable for security concerns around one user being able to initiate a minidump generation for another user's process.
@@ -51,7 +53,7 @@ On Breakpad initialization in a process, the initializer will check if the daemo
 
 This point is relevant for error handling conditions.  Linux does not clean the file system representation of a UNIX domain socket even if both endpoints terminate, so checking for existence is not strong enough.  However checking the process list or sending a ping on the socket can handle this.
 
-Breakpad uses UNIX domain sockets since they support full duplex communication (unlike Windows, named pipes on Linux are half) and the kernal automtically creats a private channel between the client and server once the client calls {{{connect()}}}.
+Breakpad uses UNIX domain sockets since they support full duplex communication (unlike Windows, named pipes on Linux are half) and the kernal automatically creates a private channel between the client and server once the client calls {{{connect()}}}.
 
 === Minidump Generation ===
 We use the historical system with {{{ptrace()}}} and {{{/proc}}} within the daemon executable.
