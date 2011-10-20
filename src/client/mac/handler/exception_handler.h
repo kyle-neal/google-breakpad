@@ -37,15 +37,11 @@
 #define CLIENT_MAC_HANDLER_EXCEPTION_HANDLER_H__
 
 #include <mach/mach.h>
-#include <TargetConditionals.h>
 
 #include <string>
 
-#include "processor/scoped_ptr.h"
-
-#if !TARGET_OS_IPHONE
 #include "client/mac/crash_generation/crash_generation_client.h"
-#endif
+#include "processor/scoped_ptr.h"
 
 namespace google_breakpad {
 
@@ -156,11 +152,7 @@ class ExceptionHandler {
 
   // Returns whether out-of-process dump generation is used or not.
   bool IsOutOfProcess() const {
-#if TARGET_OS_IPHONE
-    return false;
-#else
     return crash_generation_client_.get() != NULL;
-#endif
   }
 
  private:
@@ -258,10 +250,8 @@ class ExceptionHandler {
   // True, if we're using the mutext to indicate when mindump writing occurs
   bool use_minidump_write_mutex_;
 
-#if !TARGET_OS_IPHONE
   // Client for out-of-process dump generation.
   scoped_ptr<CrashGenerationClient> crash_generation_client_;
-#endif
 };
 
 }  // namespace google_breakpad

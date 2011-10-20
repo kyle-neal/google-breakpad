@@ -31,6 +31,7 @@
 #include <cstdio>
 
 #include <mach/host_info.h>
+#include <mach/i386/thread_status.h>
 #include <mach/mach_vm.h>
 #include <mach/vm_statistics.h>
 #include <mach-o/dyld.h>
@@ -42,19 +43,12 @@
 
 #include "client/mac/handler/minidump_generator.h"
 
-#ifdef HAS_ARM_SUPPORT
-#include <mach/arm/thread_status.h>
-#endif
 #ifdef HAS_PPC_SUPPORT
 #include <mach/ppc/thread_status.h>
-#endif
-#ifdef HAS_X86_SUPPORT
-#include <mach/i386/thread_status.h>
 #endif
 
 #include "client/minidump_file_writer-inl.h"
 #include "common/mac/file_id.h"
-#include "common/mac/macho_id.h"
 #include "common/mac/string_utilities.h"
 
 using MacStringUtils::ConvertToString;
@@ -354,22 +348,16 @@ bool MinidumpGenerator::WriteStackFromStartAddress(
 bool MinidumpGenerator::WriteStack(breakpad_thread_state_data_t state,
                                    MDMemoryDescriptor *stack_location) {
   switch (cpu_type_) {
-#ifdef HAS_ARM_SUPPORT
-    case CPU_TYPE_ARM:
-      return WriteStackARM(state, stack_location);
-#endif
 #ifdef HAS_PPC_SUPPORT
     case CPU_TYPE_POWERPC:
       return WriteStackPPC(state, stack_location);
     case CPU_TYPE_POWERPC64:
       return WriteStackPPC64(state, stack_location);
 #endif
-#ifdef HAS_X86_SUPPORT
     case CPU_TYPE_I386:
       return WriteStackX86(state, stack_location);
     case CPU_TYPE_X86_64:
       return WriteStackX86_64(state, stack_location);
-#endif
     default:
       return false;
   }
@@ -378,22 +366,16 @@ bool MinidumpGenerator::WriteStack(breakpad_thread_state_data_t state,
 bool MinidumpGenerator::WriteContext(breakpad_thread_state_data_t state,
                                      MDLocationDescriptor *register_location) {
   switch (cpu_type_) {
-#ifdef HAS_ARM_SUPPORT
-    case CPU_TYPE_ARM:
-      return WriteContextARM(state, register_location);
-#endif
 #ifdef HAS_PPC_SUPPORT
     case CPU_TYPE_POWERPC:
       return WriteContextPPC(state, register_location);
     case CPU_TYPE_POWERPC64:
       return WriteContextPPC64(state, register_location);
 #endif
-#ifdef HAS_X86_SUPPORT
     case CPU_TYPE_I386:
       return WriteContextX86(state, register_location);
     case CPU_TYPE_X86_64:
       return WriteContextX86_64(state, register_location);
-#endif
     default:
       return false;
   }
@@ -402,85 +384,21 @@ bool MinidumpGenerator::WriteContext(breakpad_thread_state_data_t state,
 u_int64_t MinidumpGenerator::CurrentPCForStack(
     breakpad_thread_state_data_t state) {
   switch (cpu_type_) {
-#ifdef HAS_ARM_SUPPORT
-    case CPU_TYPE_ARM:
-      return CurrentPCForStackARM(state);
-#endif
 #ifdef HAS_PPC_SUPPORT
     case CPU_TYPE_POWERPC:
       return CurrentPCForStackPPC(state);
     case CPU_TYPE_POWERPC64:
       return CurrentPCForStackPPC64(state);
 #endif
-#ifdef HAS_X86_SUPPORT
     case CPU_TYPE_I386:
       return CurrentPCForStackX86(state);
     case CPU_TYPE_X86_64:
       return CurrentPCForStackX86_64(state);
-#endif
     default:
       assert("Unknown CPU type!");
       return 0;
   }
 }
-
-#ifdef HAS_ARM_SUPPORT
-bool MinidumpGenerator::WriteStackARM(breakpad_thread_state_data_t state,
-                                      MDMemoryDescriptor *stack_location) {
-  arm_thread_state_t *machine_state =
-      reinterpret_cast<arm_thread_state_t *>(state);
-  mach_vm_address_t start_addr = REGISTER_FROM_THREADSTATE(machine_state, sp);
-  return WriteStackFromStartAddress(start_addr, stack_location);
-}
-
-u_int64_t
-MinidumpGenerator::CurrentPCForStackARM(breakpad_thread_state_data_t state) {
-  arm_thread_state_t *machine_state =
-      reinterpret_cast<arm_thread_state_t *>(state);
-
-  return REGISTER_FROM_THREADSTATE(machine_state, pc);
-}
-
-bool MinidumpGenerator::WriteContextARM(breakpad_thread_state_data_t state,
-                                        MDLocationDescriptor *register_location)
-{
-  TypedMDRVA<MDRawContextARM> context(&writer_);
-  arm_thread_state_t *machine_state =
-      reinterpret_cast<arm_thread_state_t *>(state);
-
-  if (!context.Allocate())
-    return false;
-
-  *register_location = context.location();
-  MDRawContextARM *context_ptr = context.get();
-  context_ptr->context_flags = MD_CONTEXT_ARM_FULL;
-
-#define AddGPR(a) context_ptr->iregs[a] = REGISTER_FROM_THREADSTATE(machine_state, r[a])
-
-  context_ptr->iregs[13] = REGISTER_FROM_THREADSTATE(machine_state, sp);
-  context_ptr->iregs[14] = REGISTER_FROM_THREADSTATE(machine_state, lr);
-  context_ptr->iregs[15] = REGISTER_FROM_THREADSTATE(machine_state, pc);
-  context_ptr->cpsr = REGISTER_FROM_THREADSTATE(machine_state, cpsr);
-
-  AddGPR(0);
-  AddGPR(1);
-  AddGPR(2);
-  AddGPR(3);
-  AddGPR(4);
-  AddGPR(5);
-  AddGPR(6);
-  AddGPR(7);
-  AddGPR(8);
-  AddGPR(9);
-  AddGPR(10);
-  AddGPR(11);
-  AddGPR(12);
-#undef AddReg
-#undef AddGPR
-
-  return true;
-}
-#endif
 
 #ifdef HAS_PCC_SUPPORT
 bool MinidumpGenerator::WriteStackPPC(breakpad_thread_state_data_t state,
@@ -642,7 +560,6 @@ bool MinidumpGenerator::WriteContextPPC64(
 
 #endif
 
-#ifdef HAS_X86_SUPPORT
 bool MinidumpGenerator::WriteStackX86(breakpad_thread_state_data_t state,
                                    MDMemoryDescriptor *stack_location) {
   i386_thread_state_t *machine_state =
@@ -761,18 +678,12 @@ bool MinidumpGenerator::WriteContextX86_64(
 
   return true;
 }
-#endif
 
 bool MinidumpGenerator::GetThreadState(thread_act_t target_thread,
                                        thread_state_t state,
                                        mach_msg_type_number_t *count) {
   thread_state_flavor_t flavor;
   switch (cpu_type_) {
-#ifdef HAS_ARM_SUPPORT
-    case CPU_TYPE_ARM:
-      flavor = ARM_THREAD_STATE;
-      break;
-#endif
 #ifdef HAS_PPC_SUPPORT
     case CPU_TYPE_POWERPC:
       flavor = PPC_THREAD_STATE;
@@ -781,14 +692,12 @@ bool MinidumpGenerator::GetThreadState(thread_act_t target_thread,
       flavor = PPC_THREAD_STATE64;
       break;
 #endif
-#ifdef HAS_X86_SUPPORT
     case CPU_TYPE_I386:
       flavor = i386_THREAD_STATE;
       break;
     case CPU_TYPE_X86_64:
       flavor = x86_THREAD_STATE64;
       break;
-#endif
     default:
       return false;
   }
@@ -1018,18 +927,10 @@ bool MinidumpGenerator::WriteSystemInfoStream(
   MDRawSystemInfo *info_ptr = info.get();
 
   switch (cpu_type_) {
-#ifdef HAS_ARM_SUPPORT
-    case CPU_TYPE_ARM:
-      info_ptr->processor_architecture = MD_CPU_ARCHITECTURE_ARM;
-      break;
-#endif
-#ifdef HAS_PPC_SUPPORT
     case CPU_TYPE_POWERPC:
     case CPU_TYPE_POWERPC64:
       info_ptr->processor_architecture = MD_CPU_ARCHITECTURE_PPC;
       break;
-#endif
-#ifdef HAS_X86_SUPPORT
     case CPU_TYPE_I386:
     case CPU_TYPE_X86_64:
       if (cpu_type_ == CPU_TYPE_I386)
@@ -1093,18 +994,13 @@ bool MinidumpGenerator::WriteSystemInfoStream(
 
 #endif  // __i386__ || __x86_64_
       break;
-#endif  // HAS_X86_SUPPORT
     default:
       info_ptr->processor_architecture = MD_CPU_ARCHITECTURE_UNKNOWN;
       break;
   }
 
   info_ptr->number_of_processors = number_of_processors;
-#if TARGET_OS_IPHONE
-  info_ptr->platform_id = MD_OS_IOS;
-#else
   info_ptr->platform_id = MD_OS_MAC_OS_X;
-#endif  // TARGET_OS_IPHONE
 
   MDLocationDescriptor build_string_loc;
 
@@ -1161,7 +1057,7 @@ bool MinidumpGenerator::WriteModuleStream(unsigned int index,
       module->version_info.file_version_lo |= (modVersion & 0xff);
     }
 
-    if (!WriteCVRecord(module, image->GetCPUType(), name.c_str(), false)) {
+    if (!WriteCVRecord(module, image->GetCPUType(), name.c_str())) {
       return false;
     }
   } else {
@@ -1207,11 +1103,7 @@ bool MinidumpGenerator::WriteModuleStream(unsigned int index,
           module->size_of_image = static_cast<u_int32_t>(seg->vmsize);
           module->module_name_rva = string_location.rva;
 
-          bool in_memory = false;
-#if TARGET_OS_IPHONE
-          in_memory = true;
-#endif
-          if (!WriteCVRecord(module, cpu_type, name, in_memory))
+          if (!WriteCVRecord(module, cpu_type, name))
             return false;
 
           return true;
@@ -1249,7 +1141,7 @@ int MinidumpGenerator::FindExecutableModule() {
 }
 
 bool MinidumpGenerator::WriteCVRecord(MDRawModule *module, int cpu_type,
-                                      const char *module_path, bool in_memory) {
+                                      const char *module_path) {
   TypedMDRVA<MDCVInfoPDB70> cv(&writer_);
 
   // Only return the last path component of the full module path
@@ -1275,23 +1167,10 @@ bool MinidumpGenerator::WriteCVRecord(MDRawModule *module, int cpu_type,
   cv_ptr->age = 0;
 
   // Get the module identifier
+  FileID file_id(module_path);
   unsigned char identifier[16];
-  bool result = false;
-  if (in_memory) {
-    MacFileUtilities::MachoID macho(module_path,
-        reinterpret_cast<void *>(module->base_of_image),
-        static_cast<size_t>(module->size_of_image));
-    result = macho.UUIDCommand(cpu_type, identifier);
-    if (!result)
-      result = macho.MD5(cpu_type, identifier);
-  }
 
-  if (!result) {
-     FileID file_id(module_path);
-     result = file_id.MachoIdentifier(cpu_type, identifier);
-  }
-
-  if (result) {
+  if (file_id.MachoIdentifier(cpu_type, identifier)) {
     cv_ptr->signature.data1 = (uint32_t)identifier[0] << 24 |
       (uint32_t)identifier[1] << 16 | (uint32_t)identifier[2] << 8 |
       (uint32_t)identifier[3];

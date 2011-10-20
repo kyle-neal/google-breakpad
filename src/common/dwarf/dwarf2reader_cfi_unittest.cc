@@ -33,7 +33,6 @@
 
 #include <stdlib.h>
 
-#include <string>
 #include <vector>
 
 // The '.eh_frame' format, used by the Linux C++ ABI for exception
@@ -76,7 +75,6 @@ using dwarf2reader::ENDIANNESS_LITTLE;
 using dwarf2reader::ByteReader;
 using dwarf2reader::CallFrameInfo;
 
-using std::string;
 using std::vector;
 using testing::InSequence;
 using testing::Return;
