@@ -12,7 +12,7 @@ This is just one way to do this and requires a Windows and a Goobunu workstation
     cd ~/src
     mkdir google-breakpad-filer
     svn checkout https://google-breakpad.googlecode.com/svn/trunk/ google-breakpad-filer --username ivan.penkov@gmail.com
-    configure-google-breakpad.sh
+    CXXFLAGS=-m32 CFLAGS=-m32 CPPFLAGS=-m32 ./configure
     make
     make check
 }}}
