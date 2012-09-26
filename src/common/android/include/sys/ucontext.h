@@ -50,15 +50,11 @@ extern "C" {
 #include <asm/sigcontext.h>
 typedef struct sigcontext mcontext_t;
 
-// The ARM kernel uses a 64-bit signal mask.
-typedef uint32_t  kernel_sigmask_t[2];
-
 typedef struct ucontext {
   uint32_t uc_flags;
   struct ucontext* uc_link;
   stack_t uc_stack;
   mcontext_t uc_mcontext;
-  kernel_sigmask_t uc_sigmask;
   // Other fields are not used by Google Breakpad. Don't define them.
 } ucontext_t;
 
@@ -114,16 +110,12 @@ enum {
   REG_SS,
 };
 
-// The i386 kernel uses a 64-bit signal mask.
-typedef uint32_t kernel_sigmask_t[2];
-
 typedef struct ucontext {
   uint32_t uc_flags;
   struct ucontext* uc_link;
   stack_t uc_stack;
   mcontext_t uc_mcontext;
-  kernel_sigmask_t uc_sigmask;
-  struct _libc_fpstate __fpregs_mem;
+  // Other fields are not used by Google Breakpad. Don't define them.
 } ucontext_t;
 
 #elif defined(__mips__)
@@ -150,15 +142,11 @@ typedef struct {
   uint32_t lo3;
 } mcontext_t;
 
-// The MIPS kernel uses a 128-bit signal mask.
-typedef uint32_t kernel_sigmask_t[4];
-
 typedef struct ucontext {
   uint32_t uc_flags;
   struct ucontext* uc_link;
   stack_t uc_stack;
   mcontext_t uc_mcontext;
-  kernel_sigmask_t uc_sigmask;
   // Other fields are not used by Google Breakpad. Don't define them.
 } ucontext_t;
 

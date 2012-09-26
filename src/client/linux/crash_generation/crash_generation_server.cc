@@ -81,7 +81,7 @@ GetInodeForProcPath(ino_t* inode_out, const char* path)
   assert(path);
 
   char buf[PATH_MAX];
-  if (!google_breakpad::SafeReadLink(path, buf)) {
+  if (!SafeReadLink(path, buf)) {
     return false;
   }
 
@@ -396,7 +396,10 @@ CrashGenerationServer::ClientEvent(short revents)
   }
 
   if (dump_callback_) {
-    ClientInfo info(crashing_pid, this);
+    ClientInfo info;
+
+    info.crash_server_ = this;
+    info.pid_ = crashing_pid;
 
     dump_callback_(dump_context_, &info, &minidump_filename);
   }

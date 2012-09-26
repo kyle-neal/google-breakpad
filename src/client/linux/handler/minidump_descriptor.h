@@ -45,7 +45,7 @@ class MinidumpDescriptor {
  public:
   MinidumpDescriptor() : fd_(-1) {}
 
-  explicit MinidumpDescriptor(const string& directory)
+  explicit MinidumpDescriptor(const std::string& directory)
       : fd_(-1),
         directory_(directory),
         c_path_(NULL) {
@@ -57,13 +57,10 @@ class MinidumpDescriptor {
   }
 
   explicit MinidumpDescriptor(const MinidumpDescriptor& descriptor);
-  MinidumpDescriptor& operator=(const MinidumpDescriptor& descriptor);
 
   bool IsFD() const { return fd_ != -1; }
 
   int fd() const { return fd_; }
-
-  string directory() const { return directory_; }
 
   const char* path() const { return c_path_; }
 
@@ -73,10 +70,10 @@ class MinidumpDescriptor {
 
  private:
   // The file descriptor where the minidump is generated.
-  int fd_;
+  const int fd_;
 
   // The directory where the minidump should be generated.
-  string directory_;
+  const string directory_;
   // The full path to the generated minidump.
   string path_;
   // The C string of |path_|. Precomputed so it can be access from a compromised

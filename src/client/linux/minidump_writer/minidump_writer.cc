@@ -62,6 +62,9 @@
 
 #include <algorithm>
 
+#include "client/minidump_file_writer.h"
+#include "google_breakpad/common/minidump_format.h"
+
 #include "client/linux/handler/exception_handler.h"
 #include "client/linux/minidump_writer/line_reader.h"
 #include "client/linux/minidump_writer/linux_dumper.h"
@@ -73,7 +76,6 @@
 
 namespace {
 
-using google_breakpad::AppMemoryList;
 using google_breakpad::ExceptionHandler;
 using google_breakpad::LineReader;
 using google_breakpad::LinuxDumper;
@@ -379,7 +381,6 @@ class MinidumpWriter {
                  int minidump_fd,
                  const ExceptionHandler::CrashContext* context,
                  const MappingList& mappings,
-                 const AppMemoryList& appmem,
                  LinuxDumper* dumper)
       : fd_(minidump_fd),
         path_(minidump_path),
@@ -392,8 +393,7 @@ class MinidumpWriter {
 #endif
         dumper_(dumper),
         memory_blocks_(dumper_->allocator()),
-        mapping_list_(mappings),
-        app_memory_list_(appmem) {
+        mapping_list_(mappings) {
     // Assert there should be either a valid fd or a valid path, not both.
     assert(fd_ != -1 || minidump_path);
     assert(fd_ == -1 || !minidump_path);
@@ -420,9 +420,40 @@ class MinidumpWriter {
   }
 
   bool Dump() {
+    // The dynamic linker makes information available that helps gdb find all
+    // DSOs loaded into the program. If we can access this information, we dump
+    // it to a MD_LINUX_DSO_DEBUG stream.
+    struct r_debug* r_debug = NULL;
+    uint32_t dynamic_length = 0;
+#if !defined(__ANDROID__)
+    // This code assumes the crashing process is the same as this process and
+    // may hang or take a long time to complete if not so.
+    // Thus, we skip this code for a post-mortem based dump.
+    if (!dumper_->IsPostMortem()) {
+      // The Android NDK is missing structure definitions for most of this.
+      // For now, it's simpler just to skip it.
+      for (int i = 0;;) {
+        ElfW(Dyn) dyn;
+        dynamic_length += sizeof(dyn);
+        // NOTE: Use of _DYNAMIC assumes this is the same process as the
+        // crashing process. This loop will go forever if it's out of bounds.
+        dumper_->CopyFromProcess(&dyn, GetCrashThread(), _DYNAMIC+i++,
+                                 sizeof(dyn));
+        if (dyn.d_tag == DT_DEBUG) {
+          r_debug = (struct r_debug*)dyn.d_un.d_ptr;
+          continue;
+        } else if (dyn.d_tag == DT_NULL) {
+          break;
+        }
+      }
+    }
+#endif
+
     // A minidump file contains a number of tagged streams. This is the number
     // of stream which we write.
-    unsigned kNumWriters = 13;
+    unsigned kNumWriters = 12;
+    if (r_debug)
+      ++kNumWriters;
 
     TypedMDRVA<MDRawHeader> header(&minidump_writer_);
     TypedMDRVA<MDRawDirectory> dir(&minidump_writer_);
@@ -448,9 +479,6 @@ class MinidumpWriter {
     if (!WriteMappings(&dirent))
       return false;
     dir.CopyIndex(dir_index++, &dirent);
-
-    if (!WriteAppMemory())
-      return false;
 
     if (!WriteMemoryListStream(&dirent))
       return false;
@@ -499,10 +527,12 @@ class MinidumpWriter {
       NullifyDirectoryEntry(&dirent);
     dir.CopyIndex(dir_index++, &dirent);
 
-    dirent.stream_type = MD_LINUX_DSO_DEBUG;
-    if (!WriteDSODebugStream(&dirent))
-      NullifyDirectoryEntry(&dirent);
-    dir.CopyIndex(dir_index++, &dirent);
+    if (r_debug) {
+      dirent.stream_type = MD_LINUX_DSO_DEBUG;
+      if (!WriteDSODebugStream(&dirent, r_debug, dynamic_length))
+        NullifyDirectoryEntry(&dirent);
+      dir.CopyIndex(dir_index++, &dirent);
+    }
 
     // If you add more directory entries, don't forget to update kNumWriters,
     // above.
@@ -650,7 +680,6 @@ class MinidumpWriter {
       // signal handler with the alternative stack, which would be deeply
       // unhelpful.
       if (static_cast<pid_t>(thread.thread_id) == GetCrashThread() &&
-          ucontext_ &&
           !dumper_->IsPostMortem()) {
         const void* stack;
         size_t stack_len;
@@ -741,41 +770,12 @@ class MinidumpWriter {
         PopSeccompStackFrame(cpu.get(), thread, stack_copy);
         thread.thread_context = cpu.location();
         if (dumper_->threads()[i] == GetCrashThread()) {
+          assert(dumper_->IsPostMortem());
           crashing_thread_context_ = cpu.location();
-          if (!dumper_->IsPostMortem()) {
-            // This is the crashing thread of a live process, but
-            // no context was provided, so set the crash address
-            // while the instruction pointer is already here.
-            dumper_->set_crash_address(GetInstructionPointer(info));
-          }
         }
       }
 
       list.CopyIndexAfterObject(i, &thread, sizeof(thread));
-    }
-
-    return true;
-  }
-
-  // Write application-provided memory regions.
-  bool WriteAppMemory() {
-    for (AppMemoryList::const_iterator iter = app_memory_list_.begin();
-         iter != app_memory_list_.end();
-         ++iter) {
-      uint8_t* data_copy =
-        reinterpret_cast<uint8_t*>(dumper_->allocator()->Alloc(iter->length));
-      dumper_->CopyFromProcess(data_copy, GetCrashThread(), iter->ptr,
-                               iter->length);
-
-      UntypedMDRVA memory(&minidump_writer_);
-      if (!memory.Allocate(iter->length)) {
-        return false;
-      }
-      memory.Copy(data_copy, iter->length);
-      MDMemoryDescriptor desc;
-      desc.start_of_memory_range = reinterpret_cast<uintptr_t>(iter->ptr);
-      desc.memory = memory.location();
-      memory_blocks_.push_back(desc);
     }
 
     return true;
@@ -964,59 +964,13 @@ class MinidumpWriter {
     return true;
   }
 
-  bool WriteDSODebugStream(MDRawDirectory* dirent) {
+  bool WriteDSODebugStream(MDRawDirectory* dirent, struct r_debug* r_debug,
+                           uint32_t dynamic_length) {
 #if defined(__ANDROID__)
     return false;
 #else
-    ElfW(Phdr)* phdr = reinterpret_cast<ElfW(Phdr) *>(dumper_->auxv()[AT_PHDR]);
-    char* base;
-    int phnum = dumper_->auxv()[AT_PHNUM];
-    if (!phnum || !phdr)
-      return false;
-
-    // Assume the program base is at the beginning of the same page as the PHDR
-    base = reinterpret_cast<char *>(reinterpret_cast<uintptr_t>(phdr) & ~0xfff);
-
-    // Search for the program PT_DYNAMIC segment
-    ElfW(Addr) dyn_addr = 0;
-    for (; phnum >= 0; phnum--, phdr++) {
-      ElfW(Phdr) ph;
-      dumper_->CopyFromProcess(&ph, GetCrashThread(), phdr, sizeof(ph));
-      // Adjust base address with the virtual address of the PT_LOAD segment
-      // corresponding to offset 0
-      if (ph.p_type == PT_LOAD && ph.p_offset == 0) {
-        base -= ph.p_vaddr;
-      }
-      if (ph.p_type == PT_DYNAMIC) {
-        dyn_addr = ph.p_vaddr;
-      }
-    }
-    if (!dyn_addr)
-      return false;
-
-    ElfW(Dyn) *dynamic = reinterpret_cast<ElfW(Dyn) *>(dyn_addr + base);
-
-    // The dynamic linker makes information available that helps gdb find all
-    // DSOs loaded into the program. If this information is indeed available,
-    // dump it to a MD_LINUX_DSO_DEBUG stream.
-    struct r_debug* r_debug = NULL;
-    uint32_t dynamic_length = 0;
-
-    for (int i = 0;;) {
-      ElfW(Dyn) dyn;
-      dynamic_length += sizeof(dyn);
-      dumper_->CopyFromProcess(&dyn, GetCrashThread(), dynamic+i++,
-                               sizeof(dyn));
-      if (dyn.d_tag == DT_DEBUG) {
-        r_debug = reinterpret_cast<struct r_debug*>(dyn.d_un.d_ptr);
-        continue;
-      } else if (dyn.d_tag == DT_NULL) {
-        break;
-      }
-    }
-
-    // The "r_map" field of that r_debug struct contains a linked list of all
-    // loaded DSOs.
+    // The caller provided us with a pointer to "struct r_debug". We can
+    // look up the "r_map" field to get a linked list of all loaded DSOs.
     // Our list of DSOs potentially is different from the ones in the crashing
     // process. So, we have to be careful to never dereference pointers
     // directly. Instead, we use CopyFromProcess() everywhere.
@@ -1079,10 +1033,10 @@ class MinidumpWriter {
     debug.get()->dso_count = dso_count;
     debug.get()->brk = (void*)debug_entry.r_brk;
     debug.get()->ldbase = (void*)debug_entry.r_ldbase;
-    debug.get()->dynamic = dynamic;
+    debug.get()->dynamic = (void*)&_DYNAMIC;
 
-    char* dso_debug_data = new char[dynamic_length];
-    dumper_->CopyFromProcess(dso_debug_data, GetCrashThread(), dynamic,
+    char *dso_debug_data = new char[dynamic_length];
+    dumper_->CopyFromProcess(dso_debug_data, GetCrashThread(), &_DYNAMIC,
                              dynamic_length);
     debug.CopyIndexAfterObject(0, dso_debug_data, dynamic_length);
     delete[] dso_debug_data;
@@ -1108,10 +1062,6 @@ class MinidumpWriter {
   uintptr_t GetInstructionPointer() {
     return ucontext_->uc_mcontext.gregs[REG_EIP];
   }
-
-  uintptr_t GetInstructionPointer(const ThreadInfo& info) {
-    return info.regs.eip;
-  }
 #elif defined(__x86_64)
   uintptr_t GetStackPointer() {
     return ucontext_->uc_mcontext.gregs[REG_RSP];
@@ -1120,21 +1070,13 @@ class MinidumpWriter {
   uintptr_t GetInstructionPointer() {
     return ucontext_->uc_mcontext.gregs[REG_RIP];
   }
-
-  uintptr_t GetInstructionPointer(const ThreadInfo& info) {
-    return info.regs.rip;
-  }
 #elif defined(__ARM_EABI__)
   uintptr_t GetStackPointer() {
     return ucontext_->uc_mcontext.arm_sp;
   }
 
   uintptr_t GetInstructionPointer() {
-    return ucontext_->uc_mcontext.arm_pc;
-  }
-
-  uintptr_t GetInstructionPointer(const ThreadInfo& info) {
-    return info.regs.uregs[15];
+    return ucontext_->uc_mcontext.arm_ip;
   }
 #else
 #error "This code has not been ported to your platform yet."
@@ -1208,14 +1150,8 @@ class MinidumpWriter {
             if (space_ptr != value)
               continue;
 
-            // skip past the colon and all the spaces that follow
-            do {
-              value++;
-            } while (my_isspace(*value));
-
             uintptr_t val;
-            if (my_read_decimal_ptr(&val, value) == value)
-              continue;
+            my_read_decimal_ptr(&val, ++value);
             entry->value = static_cast<int>(val);
             entry->found = true;
           }
@@ -1227,7 +1163,7 @@ class MinidumpWriter {
           if (!value)
             goto popline;
 
-          // skip past the colon and all the spaces that follow
+          // skip ':" and all the spaces that follows
           do {
             value++;
           } while (my_isspace(*value));
@@ -1425,9 +1361,6 @@ class MinidumpWriter {
   wasteful_vector<MDMemoryDescriptor> memory_blocks_;
   // Additional information about some mappings provided by the caller.
   const MappingList& mapping_list_;
-  // Additional memory regions to be included in the dump,
-  // provided by the caller.
-  const AppMemoryList& app_memory_list_;
 };
 
 
@@ -1435,8 +1368,7 @@ bool WriteMinidumpImpl(const char* minidump_path,
                        int minidump_fd,
                        pid_t crashing_process,
                        const void* blob, size_t blob_size,
-                       const MappingList& mappings,
-                       const AppMemoryList& appmem) {
+                       const MappingList& mappings) {
   if (blob_size != sizeof(ExceptionHandler::CrashContext))
     return false;
   const ExceptionHandler::CrashContext* context =
@@ -1446,8 +1378,7 @@ bool WriteMinidumpImpl(const char* minidump_path,
       reinterpret_cast<uintptr_t>(context->siginfo.si_addr));
   dumper.set_crash_signal(context->siginfo.si_signo);
   dumper.set_crash_thread(context->tid);
-  MinidumpWriter writer(minidump_path, minidump_fd, context, mappings,
-                        appmem, &dumper);
+  MinidumpWriter writer(minidump_path, minidump_fd, context, mappings, &dumper);
   if (!writer.Init())
     return false;
   return writer.Dump();
@@ -1460,49 +1391,33 @@ namespace google_breakpad {
 bool WriteMinidump(const char* minidump_path, pid_t crashing_process,
                    const void* blob, size_t blob_size) {
   return WriteMinidumpImpl(minidump_path, -1, crashing_process, blob, blob_size,
-                           MappingList(), AppMemoryList());
+                           MappingList());
 }
 
 bool WriteMinidump(int minidump_fd, pid_t crashing_process,
                    const void* blob, size_t blob_size) {
   return WriteMinidumpImpl(NULL, minidump_fd, crashing_process, blob, blob_size,
-                           MappingList(), AppMemoryList());
-}
-
-bool WriteMinidump(const char* minidump_path, pid_t process,
-                   pid_t process_blamed_thread) {
-  LinuxPtraceDumper dumper(process);
-  // MinidumpWriter will set crash address
-  dumper.set_crash_signal(MD_EXCEPTION_CODE_LIN_DUMP_REQUESTED);
-  dumper.set_crash_thread(process_blamed_thread);
-  MinidumpWriter writer(minidump_path, -1, NULL, MappingList(),
-                        AppMemoryList(), &dumper);
-  if (!writer.Init())
-    return false;
-  return writer.Dump();
+                           MappingList());
 }
 
 bool WriteMinidump(const char* minidump_path, pid_t crashing_process,
                    const void* blob, size_t blob_size,
-                   const MappingList& mappings,
-                   const AppMemoryList& appmem) {
+                   const MappingList& mappings) {
   return WriteMinidumpImpl(minidump_path, -1, crashing_process, blob, blob_size,
-                           mappings, appmem);
+                           mappings);
 }
 
 bool WriteMinidump(int minidump_fd, pid_t crashing_process,
                    const void* blob, size_t blob_size,
-                   const MappingList& mappings,
-                   const AppMemoryList& appmem) {
+                   const MappingList& mappings) {
   return WriteMinidumpImpl(NULL, minidump_fd, crashing_process, blob, blob_size,
-                           mappings, appmem);
+                           mappings);
 }
 
 bool WriteMinidump(const char* filename,
                    const MappingList& mappings,
-                   const AppMemoryList& appmem,
                    LinuxDumper* dumper) {
-  MinidumpWriter writer(filename, -1, NULL, mappings, appmem, dumper);
+  MinidumpWriter writer(filename, -1, NULL, mappings, dumper);
   if (!writer.Init())
     return false;
   return writer.Dump();

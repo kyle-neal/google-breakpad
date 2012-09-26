@@ -32,9 +32,7 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
-#include <ucontext.h>
 #include <unistd.h>
-#include <ucontext.h>
 
 #include <string>
 
@@ -48,7 +46,6 @@
 #include "common/linux/ignore_ret.h"
 #include "common/linux/safe_readlink.h"
 #include "common/tests/auto_tempdir.h"
-#include "common/tests/file_utils.h"
 #include "common/using_std_string.h"
 #include "google_breakpad/processor/minidump.h"
 #include "processor/scoped_ptr.h"
@@ -173,8 +170,7 @@ TEST(MinidumpWriterTest, MappingInfo) {
 
   ExceptionHandler::CrashContext context;
   memset(&context, 0, sizeof(context));
-  ASSERT_EQ(0, getcontext(&context.context));
-  context.tid = child;
+  context.tid = 1;
 
   AutoTempDir temp_dir;
   string templ = temp_dir.path() + "/minidump-writer-unittest";
@@ -187,13 +183,12 @@ TEST(MinidumpWriterTest, MappingInfo) {
   strcpy(info.name, kMemoryName);
 
   MappingList mappings;
-  AppMemoryList memory_list;
   MappingEntry mapping;
   mapping.first = info;
   memcpy(mapping.second, kModuleGUID, sizeof(MDGUID));
   mappings.push_back(mapping);
   ASSERT_TRUE(WriteMinidump(templ.c_str(), child, &context, sizeof(context),
-                            mappings, memory_list));
+                            mappings));
 
   // Read the minidump. Load the module list, and ensure that
   // the mmap'ed |memory| is listed with the given module name
@@ -211,20 +206,6 @@ TEST(MinidumpWriterTest, MappingInfo) {
   EXPECT_EQ(memory_size, module->size());
   EXPECT_EQ(kMemoryName, module->code_file());
   EXPECT_EQ(module_identifier, module->debug_identifier());
-
-  u_int32_t len;
-  // These streams are expected to be there
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_THREAD_LIST_STREAM, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_MEMORY_LIST_STREAM, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_EXCEPTION_STREAM, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_SYSTEM_INFO_STREAM, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_CPU_INFO, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_PROC_STATUS, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_CMD_LINE, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_ENVIRON, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_AUXV, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_MAPS, &len));
-  EXPECT_TRUE(minidump.SeekToStreamType(MD_LINUX_DSO_DEBUG, &len));
 
   close(fds[1]);
 }
@@ -306,13 +287,12 @@ TEST(MinidumpWriterTest, MappingInfoContained) {
   strcpy(info.name, kMemoryName);
 
   MappingList mappings;
-  AppMemoryList memory_list;
   MappingEntry mapping;
   mapping.first = info;
   memcpy(mapping.second, kModuleGUID, sizeof(MDGUID));
   mappings.push_back(mapping);
   ASSERT_TRUE(WriteMinidump(dumpfile.c_str(), child, &context, sizeof(context),
-                            mappings, memory_list));
+                            mappings));
 
   // Read the minidump. Load the module list, and ensure that
   // the mmap'ed |memory| is listed with the given module name
@@ -348,8 +328,10 @@ TEST(MinidumpWriterTest, DeletedBinary) {
   // Copy binary to a temp file.
   AutoTempDir temp_dir;
   string binpath = temp_dir.path() + "/linux-dumper-unittest-helper";
-  ASSERT_TRUE(CopyFile(helper_path.c_str(), binpath.c_str()))
-      << "Failed to copy " << helper_path << " to " << binpath;
+  char cmdline[2 * PATH_MAX];
+  sprintf(cmdline, "/bin/cp \"%s\" \"%s\"", helper_path.c_str(),
+          binpath.c_str());
+  ASSERT_EQ(0, system(cmdline)) << "Failed to execute: " << cmdline;
   ASSERT_EQ(0, chmod(binpath.c_str(), 0755));
 
   int fds[2];
@@ -428,76 +410,4 @@ TEST(MinidumpWriterTest, DeletedBinary) {
   // which is always zero on Linux.
   module_identifier += "0";
   EXPECT_EQ(module_identifier, module->debug_identifier());
-}
-
-// Test that an additional memory region can be added to the minidump.
-TEST(MinidumpWriterTest, AdditionalMemory) {
-  int fds[2];
-  ASSERT_NE(-1, pipe(fds));
-
-  // These are defined here so the parent can use them to check the
-  // data from the minidump afterwards.
-  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
-
-  // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
-  const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
-  ASSERT_TRUE(memory);
-
-  // Stick some data into the memory so the contents can be verified.
-  for (u_int32_t i = 0; i < kMemorySize; ++i) {
-    memory[i] = i % 255;
-  }
-
-  const pid_t child = fork();
-  if (child == 0) {
-    close(fds[1]);
-    char b;
-    HANDLE_EINTR(read(fds[0], &b, sizeof(b)));
-    close(fds[0]);
-    syscall(__NR_exit);
-  }
-  close(fds[0]);
-
-  ExceptionHandler::CrashContext context;
-
-  // This needs a valid context for minidump writing to work, but getting
-  // a useful one from the child is too much work, so just use one from
-  // the parent since the child is just a forked copy anyway.
-  ASSERT_EQ(0, getcontext(&context.context));
-  context.tid = child;
-
-  AutoTempDir temp_dir;
-  string templ = temp_dir.path() + "/minidump-writer-unittest";
-  unlink(templ.c_str());
-
-  MappingList mappings;
-  AppMemoryList memory_list;
-
-  // Add the memory region to the list of memory to be included.
-  AppMemory app_memory;
-  app_memory.ptr = memory;
-  app_memory.length = kMemorySize;
-  memory_list.push_back(app_memory);
-  ASSERT_TRUE(WriteMinidump(templ.c_str(), child, &context, sizeof(context),
-                            mappings, memory_list));
-
-  // Read the minidump. Ensure that the memory region is present
-  Minidump minidump(templ.c_str());
-  ASSERT_TRUE(minidump.Read());
-
-  MinidumpMemoryList* dump_memory_list = minidump.GetMemoryList();
-  ASSERT_TRUE(dump_memory_list);
-  const MinidumpMemoryRegion* region =
-    dump_memory_list->GetMemoryRegionForAddress(kMemoryAddress);
-  ASSERT_TRUE(region);
-
-  EXPECT_EQ(kMemoryAddress, region->GetBase());
-  EXPECT_EQ(kMemorySize, region->GetSize());
-
-  // Verify memory contents.
-  EXPECT_EQ(0, memcmp(region->GetMemory(), memory, kMemorySize));
-
-  delete[] memory;
-  close(fds[1]);
 }

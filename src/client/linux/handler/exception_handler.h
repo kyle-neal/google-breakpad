@@ -46,6 +46,8 @@
 #include "google_breakpad/common/minidump_format.h"
 #include "processor/scoped_ptr.h"
 
+struct sigaction;
+
 namespace google_breakpad {
 
 // ExceptionHandler
@@ -138,10 +140,6 @@ class ExceptionHandler {
     return minidump_descriptor_;
   }
 
-  void set_minidump_descriptor(const MinidumpDescriptor& descriptor) {
-    minidump_descriptor_ = descriptor;
-  }
-
   void set_crash_handler(HandlerCallback callback) {
     crash_handler_ = callback;
   }
@@ -166,23 +164,6 @@ class ExceptionHandler {
   static bool WriteMinidump(const string& dump_path,
                             MinidumpCallback callback,
                             void* callback_context);
-
-  // Write a minidump of |child| immediately.  This can be used to
-  // capture the execution state of |child| independently of a crash.
-  // Pass a meaningful |child_blamed_thread| to make that thread in
-  // the child process the one from which a crash signature is
-  // extracted.
-  //
-  // WARNING: the return of this function *must* happen before
-  // the code that will eventually reap |child| executes.
-  // Otherwise there's a pernicious race condition in which |child|
-  // exits, is reaped, another process created with its pid, then that
-  // new process dumped.
-  static bool WriteMinidumpForChild(pid_t child,
-                                    pid_t child_blamed_thread,
-                                    const string& dump_path,
-                                    MinidumpCallback callback,
-                                    void* callback_context);
 
   // This structure is passed to minidump_writer.h:WriteMinidump via an opaque
   // blob. It shouldn't be needed in any user code.
@@ -210,21 +191,11 @@ class ExceptionHandler {
                       size_t mapping_size,
                       size_t file_offset);
 
-  // Register a block of memory of length bytes starting at address ptr
-  // to be copied to the minidump when a crash happens.
-  void RegisterAppMemory(void* ptr, size_t length);
-
-  // Unregister a block of memory that was registered with RegisterAppMemory.
-  void UnregisterAppMemory(void* ptr);
-
   // Force signal handling for the specified signal.
   bool SimulateSignalDelivery(int sig);
  private:
-  // Save the old signal handlers and install new ones.
-  static bool InstallHandlersLocked();
-  // Restore the old signal handlers.
-  static void RestoreHandlersLocked();
-
+  bool InstallHandlers();
+  void UninstallHandlers();
   void PreresolveSymbols();
   bool GenerateDump(CrashContext *context);
   void SendContinueSignalToChild();
@@ -250,7 +221,12 @@ class ExceptionHandler {
   // multiple ExceptionHandler instances in a process. Each will have itself
   // registered in this stack.
   static std::vector<ExceptionHandler*> *handler_stack_;
+  // The index of the handler that should handle the next exception.
+  static unsigned handler_stack_index_;
   static pthread_mutex_t handler_stack_mutex_;
+
+  // A vector of the old signal handlers.
+  std::vector<std::pair<int, struct sigaction *> > old_handlers_;
 
   // We need to explicitly enable ptrace of parent processes on some
   // kernels, but we need to know the PID of the cloned process before we
@@ -262,10 +238,6 @@ class ExceptionHandler {
   // Callers can add extra info about mappings for cases where the
   // dumper code cannot extract enough information from /proc/<pid>/maps.
   MappingList mapping_list_;
-
-  // Callers can request additional memory regions to be included in
-  // the dump.
-  AppMemoryList app_memory_list_;
 };
 
 }  // namespace google_breakpad

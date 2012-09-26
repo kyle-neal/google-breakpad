@@ -287,8 +287,7 @@ TEST(LinuxPtraceDumperTest, MappingsIncludeLinuxGate) {
   LinuxPtraceDumper dumper(getpid());
   ASSERT_TRUE(dumper.Init());
 
-  void* linux_gate_loc =
-    reinterpret_cast<void *>(dumper.auxv()[AT_SYSINFO_EHDR]);
+  void* linux_gate_loc = dumper.FindBeginningOfLinuxGateSharedLibrary(getpid());
   ASSERT_TRUE(linux_gate_loc);
   bool found_linux_gate = false;
 

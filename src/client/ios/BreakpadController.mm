@@ -224,7 +224,7 @@ NSString* GetPlatform() {
 
   if (spanSeconds >= uploadIntervalInSeconds_)
     return 0;
-  return uploadIntervalInSeconds_ - static_cast<int>(spanSeconds);
+  return uploadIntervalInSeconds_ - spanSeconds;
 }
 
 - (void)reportWillBeSent {

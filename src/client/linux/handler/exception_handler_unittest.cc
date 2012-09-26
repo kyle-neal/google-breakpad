@@ -125,10 +125,6 @@ TEST(ExceptionHandlerTest, SimpleWithPath) {
   AutoTempDir temp_dir;
   ExceptionHandler handler(
       MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
-  EXPECT_EQ(temp_dir.path(), handler.minidump_descriptor().directory());
-  string temp_subdir = temp_dir.path() + "/subdir";
-  handler.set_minidump_descriptor(MinidumpDescriptor(temp_subdir));
-  EXPECT_EQ(temp_subdir, handler.minidump_descriptor().directory());
 }
 
 TEST(ExceptionHandlerTest, SimpleWithFD) {
@@ -206,181 +202,6 @@ TEST(ExceptionHandlerTest, ChildCrashWithFD) {
   ASSERT_NO_FATAL_FAILURE(ChildCrash(true));
 }
 
-static bool DoneCallbackReturnFalse(const MinidumpDescriptor& descriptor,
-                                    void* context,
-                                    bool succeeded) {
-  return false;
-}
-
-static bool DoneCallbackReturnTrue(const MinidumpDescriptor& descriptor,
-                                   void* context,
-                                   bool succeeded) {
-  return true;
-}
-
-static bool DoneCallbackRaiseSIGKILL(const MinidumpDescriptor& descriptor,
-                                     void* context,
-                                     bool succeeded) {
-  raise(SIGKILL);
-  return true;
-}
-
-static bool FilterCallbackReturnFalse(void* context) {
-  return false;
-}
-
-static bool FilterCallbackReturnTrue(void* context) {
-  return true;
-}
-
-// SIGKILL cannot be blocked and a handler cannot be installed for it. In the
-// following tests, if the child dies with signal SIGKILL, then the signal was
-// redelivered to this handler. If the child dies with SIGSEGV then it wasn't.
-static void RaiseSIGKILL(int sig) {
-  raise(SIGKILL);
-}
-
-static bool InstallRaiseSIGKILL() {
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.sa_handler = RaiseSIGKILL;
-  return sigaction(SIGSEGV, &sa, NULL) != -1;
-}
-
-static void CrashWithCallbacks(ExceptionHandler::FilterCallback filter,
-                               ExceptionHandler::MinidumpCallback done,
-                               string path) {
-  ExceptionHandler handler(
-      MinidumpDescriptor(path), filter, done, NULL, true, -1);
-  // Crash with the exception handler in scope.
-  *reinterpret_cast<volatile int*>(NULL) = 0;
-}
-
-TEST(ExceptionHandlerTest, RedeliveryOnFilterCallbackFalse) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ASSERT_TRUE(InstallRaiseSIGKILL());
-    CrashWithCallbacks(FilterCallbackReturnFalse, NULL, temp_dir.path());
-  }
-
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
-}
-
-TEST(ExceptionHandlerTest, RedeliveryOnDoneCallbackFalse) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ASSERT_TRUE(InstallRaiseSIGKILL());
-    CrashWithCallbacks(NULL, DoneCallbackReturnFalse, temp_dir.path());
-  }
-
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
-}
-
-TEST(ExceptionHandlerTest, NoRedeliveryOnDoneCallbackTrue) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ASSERT_TRUE(InstallRaiseSIGKILL());
-    CrashWithCallbacks(NULL, DoneCallbackReturnTrue, temp_dir.path());
-  }
-
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
-}
-
-TEST(ExceptionHandlerTest, NoRedeliveryOnFilterCallbackTrue) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ASSERT_TRUE(InstallRaiseSIGKILL());
-    CrashWithCallbacks(FilterCallbackReturnTrue, NULL, temp_dir.path());
-  }
-
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
-}
-
-TEST(ExceptionHandlerTest, RedeliveryToDefaultHandler) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    CrashWithCallbacks(FilterCallbackReturnFalse, NULL, temp_dir.path());
-  }
-
-  // As RaiseSIGKILL wasn't installed, the redelivery should just kill the child
-  // with SIGSEGV.
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
-}
-
-TEST(ExceptionHandlerTest, StackedHandlersDeliveredToTop) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
-                            NULL,
-                            NULL,
-                            NULL,
-                            true,
-                            -1);
-    CrashWithCallbacks(NULL, DoneCallbackRaiseSIGKILL, temp_dir.path());
-  }
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
-}
-
-TEST(ExceptionHandlerTest, StackedHandlersNotDeliveredToBottom) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
-                            NULL,
-                            DoneCallbackRaiseSIGKILL,
-                            NULL,
-                            true,
-                            -1);
-    CrashWithCallbacks(NULL, NULL, temp_dir.path());
-  }
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGSEGV));
-}
-
-TEST(ExceptionHandlerTest, StackedHandlersFilteredToBottom) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
-                            NULL,
-                            DoneCallbackRaiseSIGKILL,
-                            NULL,
-                            true,
-                            -1);
-    CrashWithCallbacks(FilterCallbackReturnFalse, NULL, temp_dir.path());
-  }
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
-}
-
-TEST(ExceptionHandlerTest, StackedHandlersUnhandledToBottom) {
-  AutoTempDir temp_dir;
-
-  const pid_t child = fork();
-  if (child == 0) {
-    ExceptionHandler bottom(MinidumpDescriptor(temp_dir.path()),
-                            NULL,
-                            DoneCallbackRaiseSIGKILL,
-                            NULL,
-                            true,
-                            -1);
-    CrashWithCallbacks(NULL, DoneCallbackReturnFalse, temp_dir.path());
-  }
-  ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
-}
-
 // Test that memory around the instruction pointer is written
 // to the dump as a MinidumpMemoryRegion.
 TEST(ExceptionHandlerTest, InstructionPointerMemory) {
@@ -451,7 +272,20 @@ TEST(ExceptionHandlerTest, InstructionPointerMemory) {
   ASSERT_TRUE(context);
 
   u_int64_t instruction_pointer;
-  ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
+  switch (context->GetContextCPU()) {
+  case MD_CONTEXT_X86:
+    instruction_pointer = context->GetContextX86()->eip;
+    break;
+  case MD_CONTEXT_AMD64:
+    instruction_pointer = context->GetContextAMD64()->rip;
+    break;
+  case MD_CONTEXT_ARM:
+    instruction_pointer = context->GetContextARM()->iregs[15];
+    break;
+  default:
+    FAIL() << "Unknown context CPU: " << context->GetContextCPU();
+    break;
+  }
 
   MinidumpMemoryRegion* region =
       memory_list->GetMemoryRegionForAddress(instruction_pointer);
@@ -543,7 +377,20 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMinBound) {
   ASSERT_TRUE(context);
 
   u_int64_t instruction_pointer;
-  ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
+  switch (context->GetContextCPU()) {
+  case MD_CONTEXT_X86:
+    instruction_pointer = context->GetContextX86()->eip;
+    break;
+  case MD_CONTEXT_AMD64:
+    instruction_pointer = context->GetContextAMD64()->rip;
+    break;
+  case MD_CONTEXT_ARM:
+    instruction_pointer = context->GetContextARM()->iregs[15];
+    break;
+  default:
+    FAIL() << "Unknown context CPU: " << context->GetContextCPU();
+    break;
+  }
 
   MinidumpMemoryRegion* region =
       memory_list->GetMemoryRegionForAddress(instruction_pointer);
@@ -633,7 +480,20 @@ TEST(ExceptionHandlerTest, InstructionPointerMemoryMaxBound) {
   ASSERT_TRUE(context);
 
   u_int64_t instruction_pointer;
-  ASSERT_TRUE(context->GetInstructionPointer(&instruction_pointer));
+  switch (context->GetContextCPU()) {
+  case MD_CONTEXT_X86:
+    instruction_pointer = context->GetContextX86()->eip;
+    break;
+  case MD_CONTEXT_AMD64:
+    instruction_pointer = context->GetContextAMD64()->rip;
+    break;
+  case MD_CONTEXT_ARM:
+    instruction_pointer = context->GetContextARM()->iregs[15];
+    break;
+  default:
+    FAIL() << "Unknown context CPU: " << context->GetContextCPU();
+    break;
+  }
 
   MinidumpMemoryRegion* region =
       memory_list->GetMemoryRegionForAddress(instruction_pointer);
@@ -896,25 +756,6 @@ TEST(ExceptionHandlerTest, ExternalDumper) {
   unlink(templ.c_str());
 }
 
-TEST(ExceptionHandlerTest, WriteMinidumpExceptionStream) {
-  AutoTempDir temp_dir;
-  ExceptionHandler handler(MinidumpDescriptor(temp_dir.path()), NULL, NULL,
-                           NULL, false, -1);
-  ASSERT_TRUE(handler.WriteMinidump());
-
-  string minidump_path = handler.minidump_descriptor().path();
-
-  // Read the minidump and check the exception stream.
-  Minidump minidump(minidump_path);
-  ASSERT_TRUE(minidump.Read());
-  MinidumpException* exception = minidump.GetException();
-  ASSERT_TRUE(exception);
-  const MDRawExceptionStream* raw = exception->exception();
-  ASSERT_TRUE(raw);
-  EXPECT_EQ(MD_EXCEPTION_CODE_LIN_DUMP_REQUESTED,
-            raw->exception_record.exception_code);
-}
-
 TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithFD) {
   AutoTempDir temp_dir;
   std::string path;
@@ -959,132 +800,6 @@ TEST(ExceptionHandlerTest, GenerateMultipleDumpsWithPath) {
   ASSERT_TRUE(minidump2.Read());
   unlink(minidump_2.path());
 
-  // 2 distinct files should be produced.
+  // We expect 2 distinct files.
   ASSERT_STRNE(minidump_1_path.c_str(), minidump_2_path.c_str());
-}
-
-// Test that an additional memory region can be added to the minidump.
-TEST(ExceptionHandlerTest, AdditionalMemory) {
-  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
-
-  // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
-  const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
-  ASSERT_TRUE(memory);
-
-  // Stick some data into the memory so the contents can be verified.
-  for (u_int32_t i = 0; i < kMemorySize; ++i) {
-    memory[i] = i % 255;
-  }
-
-  AutoTempDir temp_dir;
-  ExceptionHandler handler(
-      MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
-
-  // Add the memory region to the list of memory to be included.
-  handler.RegisterAppMemory(memory, kMemorySize);
-  handler.WriteMinidump();
-
-  const MinidumpDescriptor& minidump_desc = handler.minidump_descriptor();
-
-  // Read the minidump. Ensure that the memory region is present
-  Minidump minidump(minidump_desc.path());
-  ASSERT_TRUE(minidump.Read());
-
-  MinidumpMemoryList* dump_memory_list = minidump.GetMemoryList();
-  ASSERT_TRUE(dump_memory_list);
-  const MinidumpMemoryRegion* region =
-    dump_memory_list->GetMemoryRegionForAddress(kMemoryAddress);
-  ASSERT_TRUE(region);
-
-  EXPECT_EQ(kMemoryAddress, region->GetBase());
-  EXPECT_EQ(kMemorySize, region->GetSize());
-
-  // Verify memory contents.
-  EXPECT_EQ(0, memcmp(region->GetMemory(), memory, kMemorySize));
-
-  delete[] memory;
-}
-
-// Test that a memory region that was previously registered
-// can be unregistered.
-TEST(ExceptionHandlerTest, AdditionalMemoryRemove) {
-  const u_int32_t kMemorySize = sysconf(_SC_PAGESIZE);
-
-  // Get some heap memory.
-  u_int8_t* memory = new u_int8_t[kMemorySize];
-  const uintptr_t kMemoryAddress = reinterpret_cast<uintptr_t>(memory);
-  ASSERT_TRUE(memory);
-
-  AutoTempDir temp_dir;
-  ExceptionHandler handler(
-      MinidumpDescriptor(temp_dir.path()), NULL, NULL, NULL, true, -1);
-
-  // Add the memory region to the list of memory to be included.
-  handler.RegisterAppMemory(memory, kMemorySize);
-
-  // ...and then remove it
-  handler.UnregisterAppMemory(memory);
-  handler.WriteMinidump();
-
-  const MinidumpDescriptor& minidump_desc = handler.minidump_descriptor();
-
-  // Read the minidump. Ensure that the memory region is not present.
-  Minidump minidump(minidump_desc.path());
-  ASSERT_TRUE(minidump.Read());
-
-  MinidumpMemoryList* dump_memory_list = minidump.GetMemoryList();
-  ASSERT_TRUE(dump_memory_list);
-  const MinidumpMemoryRegion* region =
-    dump_memory_list->GetMemoryRegionForAddress(kMemoryAddress);
-  EXPECT_FALSE(region);
-
-  delete[] memory;
-}
-
-static bool SimpleCallback(const MinidumpDescriptor& descriptor,
-                           void* context,
-                           bool succeeded) {
-  string* filename = reinterpret_cast<string*>(context);
-  *filename = descriptor.path();
-  return true;
-}
-
-TEST(ExceptionHandlerTest, WriteMinidumpForChild) {
-  int fds[2];
-  ASSERT_NE(-1, pipe(fds));
-
-  const pid_t child = fork();
-  if (child == 0) {
-    close(fds[1]);
-    char b;
-    HANDLE_EINTR(read(fds[0], &b, sizeof(b)));
-    close(fds[0]);
-    syscall(__NR_exit);
-  }
-  close(fds[0]);
-
-  AutoTempDir temp_dir;
-  string minidump_filename;
-  ASSERT_TRUE(
-    ExceptionHandler::WriteMinidumpForChild(child, child,
-                                            temp_dir.path(), SimpleCallback,
-                                            (void*)&minidump_filename));
-
-  Minidump minidump(minidump_filename);
-  ASSERT_TRUE(minidump.Read());
-  // Check that the crashing thread is the main thread of |child|
-  MinidumpException* exception = minidump.GetException();
-  ASSERT_TRUE(exception);
-  u_int32_t thread_id;
-  ASSERT_TRUE(exception->GetThreadID(&thread_id));
-  EXPECT_EQ(child, thread_id);
-
-  const MDRawExceptionStream* raw = exception->exception();
-  ASSERT_TRUE(raw);
-  EXPECT_EQ(MD_EXCEPTION_CODE_LIN_DUMP_REQUESTED,
-            raw->exception_record.exception_code);
-
-  close(fds[1]);
-  unlink(minidump_filename.c_str());
 }
