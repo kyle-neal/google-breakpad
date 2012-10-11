@@ -19,12 +19,11 @@ First, configure your build process to link *libbreakpad_client.a* into your bin
 
 Now you can instantiate an `ExceptionHandler` object. Exception handling is active for the lifetime of the `ExceptionHandler` object, so you should instantiate it as early as possible in your application's startup process, and keep it alive for as close to shutdown as possible. To do anything useful, the `ExceptionHandler` constructor requires a path where it can write minidumps, as well as a callback function to receive information about minidumps that were written:
 {{{
-static bool dumpCallback(const char* dump_path,
-                         const char* minidump_id,
+static bool dumpCallback(const google_breakpad::MinidumpDescriptor& descriptor,
                          void* context,
                          bool succeeded)
 {
-  printf("Dump path: %s/%s.dmp\n", dump_path, minidump_id);
+  printf("Dump path: %s\n", descriptor.path());
   return succeeded;
 }
 
@@ -37,9 +36,15 @@ void crash()
 
 int main(int argc, char* argv[])
 {
-    google_breakpad::ExceptionHandler eh("/tmp", NULL, dumpCallback, NULL, true);
-    crash();
-    return 0;
+  google_breakpad::MinidumpDescriptor descriptor("/tmp");
+  google_breakpad::ExceptionHandler eh(descriptor,
+                                       NULL,
+                                       dumpCallback,
+                                       NULL,
+                                       true,
+                                       -1);
+  crash();
+  return 0;
 }
 }}}
 
