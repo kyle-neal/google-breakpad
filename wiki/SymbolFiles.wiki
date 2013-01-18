@@ -53,7 +53,7 @@ The fields are separated by spaces, and cannot contain spaces themselves, except
 || ppc64   || 64-bit PowerPC                 ||
 || unknown || unknown                        ||
 
-  * The _id_ field is a sequence of 33 hexadecimal digits that identifies the exact executable or library whose contents the symbol file describes.  The way in which it is computed varies from platform to platform.
+  * The _id_ field is a sequence of hexadecimal digits that identifies the exact executable or library whose contents the symbol file describes.  The way in which it is computed varies from platform to platform.
 
   * The _name_ field contains the base name (the final component of the directory path) of the executable or library.  It may contain spaces, and extends to the end of the line.
 
