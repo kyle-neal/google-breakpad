@@ -182,13 +182,11 @@ The Breakpad processor checks that the value yielded by the above for the callin
 
 `STACK CFI` ("Call Frame Information") records describe how to walk
 the stack when execution is at a given machine instruction.  These
-records take one of three forms:
+records take one of two forms:
 
   `STACK CFI INIT` _address_ _size_ _register,,1,,_: _expression,,1,,_ _register,,2,,_: _expression,,2,,_ ...
 
   `STACK CFI` _address_ _register,,1,,_: _expression,,1,,_ _register,,2,,_: _expression,,2,,_ ...
-
-  `STACK CFI END` _address_
 
 For example:
 
