@@ -46,11 +46,7 @@
 #include <stdio.h>
 
 #include <algorithm>
-#if defined(_LIBCPP_VERSION)
-#include <unordered_set>
-#else
-#include <tr1/unordered_set>
-#endif
+#include <set>
 #include <utility>
 
 #include "common/dwarf_line_to_module.h"
@@ -59,12 +55,8 @@ namespace google_breakpad {
 
 using std::map;
 using std::pair;
+using std::set;
 using std::sort;
-#if defined(_LIBCPP_VERSION)
-using std::unordered_set;
-#else
-using std::tr1::unordered_set;
-#endif
 using std::vector;
 
 // Data provided by a DWARF specification DIE.
@@ -126,7 +118,7 @@ struct DwarfCUToModule::FilePrivate {
   // so this set will actually hold yet another copy of the string (although
   // everything will still work). To improve memory consumption portably,
   // we will probably need to use pointers to strings held in this set.
-  unordered_set<string> common_strings;
+  set<string> common_strings;
 
   // A map from offsets of DIEs within the .debug_info section to
   // Specifications describing those DIEs. Specification references can
@@ -345,7 +337,7 @@ void DwarfCUToModule::GenericDIEHandler::ProcessAttributeReference(
 }
 
 string DwarfCUToModule::GenericDIEHandler::AddStringToPool(const string &str) {
-  pair<unordered_set<string>::iterator, bool> result =
+  pair<set<string>::iterator, bool> result =
     cu_context_->file_context->file_private_->common_strings.insert(str);
   return *result.first;
 }

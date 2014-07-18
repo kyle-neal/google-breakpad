@@ -193,20 +193,6 @@ static bool DoneCallback(const MinidumpDescriptor& descriptor,
 
 #ifndef ADDRESS_SANITIZER
 
-// This is a replacement for "*reinterpret_cast<volatile int*>(NULL) = 0;"
-// It is needed because GCC is allowed to assume that the program will
-// not execute any undefined behavior (UB) operation. Further, when GCC
-// observes that UB statement is reached, it can assume that all statements
-// leading to the UB one are never executed either, and can completely
-// optimize them out. In the case of ExceptionHandlerTest::ExternalDumper,
-// GCC-4.9 optimized out the entire set up of ExceptionHandler, causing
-// test failure.
-volatile int *p_null;  // external linkage, so GCC can't tell that it
-                       // remains NULL. Volatile just for a good measure.
-static void DoNullPointerDereference() {
-  *p_null = 1;
-}
-
 void ChildCrash(bool use_fd) {
   AutoTempDir temp_dir;
   int fds[2] = {0};
@@ -233,7 +219,7 @@ void ChildCrash(bool use_fd) {
                                            true, -1));
       }
       // Crash with the exception handler in scope.
-      DoNullPointerDereference();
+      *reinterpret_cast<volatile int*>(NULL) = 0;
     }
   }
   if (!use_fd)
@@ -309,7 +295,7 @@ static void CrashWithCallbacks(ExceptionHandler::FilterCallback filter,
   ExceptionHandler handler(
       MinidumpDescriptor(path), filter, done, NULL, true, -1);
   // Crash with the exception handler in scope.
-  DoNullPointerDereference();
+  *reinterpret_cast<volatile int*>(NULL) = 0;
 }
 
 TEST(ExceptionHandlerTest, RedeliveryOnFilterCallbackFalse) {
@@ -400,7 +386,7 @@ TEST(ExceptionHandlerTest, RedeliveryOnBadSignalHandlerFlag) {
               reinterpret_cast<void*>(SIG_ERR));
 
     // Crash with the exception handler in scope.
-    DoNullPointerDereference();
+    *reinterpret_cast<volatile int*>(NULL) = 0;
   }
   // SIGKILL means Breakpad's signal handler didn't crash.
   ASSERT_NO_FATAL_FAILURE(WaitForProcessToTerminate(child, SIGKILL));
@@ -936,7 +922,7 @@ TEST(ExceptionHandlerTest, ExternalDumper) {
     ExceptionHandler handler(MinidumpDescriptor("/tmp1"), NULL, NULL,
                              reinterpret_cast<void*>(fds[1]), true, -1);
     handler.set_crash_handler(CrashHandler);
-    DoNullPointerDereference();
+    *reinterpret_cast<volatile int*>(NULL) = 0;
   }
   close(fds[1]);
   struct msghdr msg = {0};

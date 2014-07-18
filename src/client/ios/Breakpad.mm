@@ -258,7 +258,6 @@ void Breakpad::UncaughtExceptionHandler(NSException *exception) {
   if (current_breakpad_) {
     current_breakpad_->HandleUncaughtException(exception);
   }
-  BreakpadRelease(current_breakpad_);
 }
 
 //=============================================================================
