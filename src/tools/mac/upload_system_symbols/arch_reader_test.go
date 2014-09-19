@@ -28,20 +28,55 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <mach-o/fat.h>
-#include <mach-o/loader.h>
+package main
 
-// Go/Cgo does not support #define constants, so turn them into symbols
-// that are reachable from Go.
+import (
+	"testing"
+)
 
-const cpu_type_t kCPUType_i386 = CPU_TYPE_I386;
-const cpu_type_t kCPUType_x86_64 = CPU_TYPE_X86_64;
+func TestFat(t *testing.T) {
+	tests := []struct {
+		file   string
+		mht    MachOType
+		arches []string
+	}{
+		{"testdata/libarchtest32.dylib", MachODylib, []string{ArchI386}},
+		{"testdata/libarchtest64.dylib", MachODylib, []string{ArchX86_64}},
+		{"testdata/libarchtest.dylib", MachODylib, []string{ArchI386, ArchX86_64}},
+		{"testdata/archtest32.exe", MachOExe, []string{ArchI386}},
+		{"testdata/archtest64.exe", MachOExe, []string{ArchX86_64}},
+		{"testdata/archtest.exe", MachOExe, []string{ArchI386, ArchX86_64}},
+	}
 
-const uint32_t kMachHeaderMagic32 = MH_MAGIC;
-const uint32_t kMachHeaderMagic64 = MH_MAGIC_64;
-const uint32_t kMachHeaderMagicFat = FAT_MAGIC;
-const uint32_t kMachHeaderCigamFat = FAT_CIGAM;
+	for _, e := range tests {
+		imageinfo, err := GetMachOImageInfo(e.file)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
 
-const uint32_t kMachHeaderFtypeDylib = MH_DYLIB;
-const uint32_t kMachHeaderFtypeBundle = MH_BUNDLE;
-const uint32_t kMachHeaderFtypeExe = MH_EXECUTE;
+		expected := make(map[string]bool)
+		for _, arch := range e.arches {
+			expected[arch] = false
+		}
+
+		if len(imageinfo) != len(e.arches) {
+			t.Errorf("Wrong number of arches, got %d, expected %d", len(imageinfo), len(e.arches))
+		}
+
+		for _, ii := range imageinfo {
+			if ii.Type != e.mht {
+				t.Errorf("Wrong MachOType got %d, expected %d", ii.Type, e.mht)
+			}
+			if o, k := expected[ii.Arch]; o || !k {
+				t.Errorf("Unexpected architecture %q", ii.Arch)
+			}
+			expected[ii.Arch] = true
+		}
+
+		for k, v := range expected {
+			if !v {
+				t.Errorf("Did not get expected architecture %s", k)
+			}
+		}
+	}
+}

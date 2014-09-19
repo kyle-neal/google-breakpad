@@ -43,7 +43,6 @@ Both i386 and x86_64 architectures will be dumped and uploaded.
 package main
 
 import (
-	"debug/macho"
 	"flag"
 	"fmt"
 	"io"
@@ -59,11 +58,10 @@ import (
 )
 
 var (
-	breakpadTools    = flag.String("breakpad-tools", "out/Release/", "Path to the Breakpad tools directory, containing dump_syms and symupload.")
-	uploadOnlyPath   = flag.String("upload-from", "", "Upload a directory of symbol files that has been dumped independently.")
-	dumpOnlyPath     = flag.String("dump-to", "", "Dump the symbols to the specified directory, but do not upload them.")
-	systemRoot       = flag.String("system-root", "", "Path to the root of the Mac OS X system whose symbols will be dumped.")
-	dumpArchitecture = flag.String("arch", "", "The CPU architecture for which symbols should be dumped. If not specified, dumps all architectures.")
+	breakpadTools  = flag.String("breakpad-tools", "out/Release/", "Path to the Breakpad tools directory, containing dump_syms and symupload.")
+	uploadOnlyPath = flag.String("upload-from", "", "Upload a directory of symbol files that has been dumped independently.")
+	dumpOnlyPath   = flag.String("dump-to", "", "Dump the symbols to the specified directory, but do not upload them.")
+	systemRoot     = flag.String("system-root", "", "Path to the root of the Mac OS X system whose symbols will be dumped.")
 )
 
 var (
@@ -375,46 +373,17 @@ func (fq *findQueue) worker() {
 			continue
 		}
 
-		f, err := os.Open(fp)
-		if err != nil {
+		imageinfos, err := GetMachOImageInfo(fp)
+		if err != nil && err != ErrNotMachO {
 			log.Printf("%s: %v", fp, err)
 			continue
 		}
 
-		fatFile, err := macho.NewFatFile(f)
-		if err == nil {
-			// The file is fat, so dump its architectures.
-			for _, fatArch := range fatFile.Arches {
-				fq.dumpMachOFile(fp, fatArch.File)
+		for _, imageinfo := range imageinfos {
+			if imageinfo.Type == MachODylib || imageinfo.Type == MachOBundle {
+
+				fq.dq.DumpSymbols(fp, imageinfo.Arch)
 			}
-			fatFile.Close()
-		} else if err == macho.ErrNotFat {
-			// The file isn't fat but may still be MachO.
-			thinFile, err := macho.NewFile(f)
-			if err != nil {
-				log.Printf("%s: %v", fp, err)
-				continue
-			}
-			fq.dumpMachOFile(fp, thinFile)
-			thinFile.Close()
-		} else {
-			f.Close()
 		}
-	}
-}
-
-func (fq *findQueue) dumpMachOFile(fp string, image *macho.File) {
-	if image.Type != MachODylib && image.Type != MachOBundle {
-		return
-	}
-
-	arch := getArchStringFromHeader(image.FileHeader)
-	if arch == "" {
-		// Don't know about this architecture type.
-		return
-	}
-
-	if (*dumpArchitecture != "" && *dumpArchitecture == arch) || *dumpArchitecture == "" {
-		fq.dq.DumpSymbols(fp, arch)
 	}
 }

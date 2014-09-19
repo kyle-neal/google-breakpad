@@ -36,7 +36,7 @@
 #include <sys/time.h>
 
 #import "client/apple/Framework/BreakpadDefines.h"
-#import "common/mac/GTMDefines.h"
+#import "GTMDefines.h"
 
 
 namespace google_breakpad {

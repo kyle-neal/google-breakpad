@@ -28,9 +28,6 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-#ifndef COMMON_LINUX_GOOGLE_CRASHDUMP_UPLOADER_H_
-#define COMMON_LINUX_GOOGLE_CRASHDUMP_UPLOADER_H_
-
 #include <string>
 #include <map>
 
@@ -79,9 +76,7 @@ class GoogleCrashdumpUploader {
             const string& proxy_host,
             const string& proxy_userpassword,
             LibcurlWrapper* http_layer);
-  bool Upload(int* http_status_code,
-              string* http_response_header,
-              string* http_response_body);
+  bool Upload();
 
  private:
   bool CheckRequiredParametersArePresent();
@@ -103,5 +98,3 @@ class GoogleCrashdumpUploader {
   std::map<string, string> parameters_;
 };
 }
-
-#endif  // COMMON_LINUX_GOOGLE_CRASHDUMP_UPLOADER_H_

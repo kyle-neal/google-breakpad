@@ -31,7 +31,6 @@
 //
 // Author: Mark Mentovai
 
-#include <assert.h>
 #include <stdio.h>
 
 #include <map>
@@ -75,9 +74,6 @@ class FakeMemoryRegion : public MemoryRegion {
   virtual bool GetMemoryAtAddress(uint64_t address, uint64_t *value) const {
     *value = address + 1;
     return true;
-  }
-  virtual void Print() const {
-    assert(false);
   }
 };
 

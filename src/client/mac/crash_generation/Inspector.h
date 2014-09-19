@@ -138,6 +138,7 @@ class Inspector {
 
   bool            InspectTask();
   kern_return_t   SendAcknowledgement();
+  void            LaunchReporter(const char *inConfigFilePath);
 
   // The bootstrap port in which the inspector is registered and into which it
   // must check in.

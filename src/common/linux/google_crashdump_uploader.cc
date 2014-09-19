@@ -161,9 +161,7 @@ bool GoogleCrashdumpUploader::CheckRequiredParametersArePresent() {
 
 }
 
-bool GoogleCrashdumpUploader::Upload(int* http_status_code,
-                                     string* http_response_header,
-                                     string* http_response_body) {
+bool GoogleCrashdumpUploader::Upload() {
   bool ok = http_layer_->Init();
   if (!ok) {
     std::cout << "http layer init failed";
@@ -195,8 +193,6 @@ bool GoogleCrashdumpUploader::Upload(int* http_status_code,
   std::cout << "Sending request to " << crash_server_;
   return http_layer_->SendRequest(crash_server_,
                                   parameters_,
-                                  http_status_code,
-                                  http_response_header,
-                                  http_response_body);
+                                  NULL);
 }
 }
