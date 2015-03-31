@@ -1,0 +1,1 @@
+An open-source multi-platform crash reporting system
